@@ -58,6 +58,26 @@ export function isToolRole(role: unknown): boolean {
   return role === "tool" || role === "toolResult" || role === "tool_result";
 }
 
+/**
+ * Check if message content contains only text blocks (no images, audio, etc.)
+ * Returns false if content is an array with non-text blocks (e.g., image_url)
+ */
+export function isPureTextContent(content: unknown): boolean {
+  if (typeof content === "string" || !content) {
+    return true;
+  }
+  if (!Array.isArray(content)) {
+    return true;
+  }
+  return content.every((block) => {
+    if (!block || typeof block !== "object") {
+      return false;
+    }
+    const blockType = (block as ContentBlock).type;
+    return !blockType || blockType === "text";
+  });
+}
+
 export function estimateTokens(text: string): number {
   return Math.ceil(text.length / 4);
 }

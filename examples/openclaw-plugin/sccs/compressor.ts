@@ -1,5 +1,5 @@
 import { SummaryExtractor } from "./summarizer.js";
-import { extractTextContent, hasRefId, isToolRole, md5Hex, setTextContent } from "./utils.js";
+import { extractTextContent, hasRefId, isToolRole, isPureTextContent, md5Hex, setTextContent } from "./utils.js";
 import type { RefStore } from "./storage.js";
 export type CompressorConfig = {
   compressThreshold: number;
@@ -46,6 +46,11 @@ export async function compressToolMessages(params: {
   for (let i = 0; i < nextMessages.length; i++) {
     const msg = nextMessages[i];
     if (!isToolRole(msg.role)) continue;
+    // Skip messages with non-text content (e.g., images, audio)
+    if (!isPureTextContent(msg.content)) {
+      logger?.warn?.(`[sccs] skipped tool message #${i}: contains non-text content blocks`);
+      continue;
+    }
     const text = extractTextContent(msg.content);
     if (!text) continue;
     if (text.length <= config.compressThreshold || hasRefId(text)) continue;
