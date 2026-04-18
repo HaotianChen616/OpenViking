@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { mkdir, rm, readFile } from "node:fs/promises";
+import { mkdir, rm, readFile, chmod } from "node:fs/promises";
 
 import { normalizeRefId, md5Hex } from "../../sccs/utils.js";
 import { DiskBackedStore, MemoryStore } from "../../sccs/storage.js";
@@ -148,14 +148,57 @@ describe("DiskBackedStore path traversal prevention", () => {
       const store = new DiskBackedStore({ dir: testDir, maxEntries: 100 });
       const refId = md5Hex("file location test");
       await store.set(refId, "test content", 3600);
-      // Wait for async disk write to complete
-      await new Promise((r) => setTimeout(r, 100));
+      // set() now awaits disk write — file should be immediately readable
       const filePath = join(testDir, "refs", `${refId}.json`);
       const raw = await readFile(filePath, "utf8");
       const parsed = JSON.parse(raw);
       expect(parsed.content).toBe("test content");
       expect(typeof parsed.expiresAt).toBe("number");
     } finally {
+      await rm(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it("persists data to disk so new store instance can read it", async () => {
+    testDir = await createTestDir();
+    try {
+      const refId = md5Hex("persistence test");
+      // Write with one store instance
+      const store1 = new DiskBackedStore({ dir: testDir, maxEntries: 100 });
+      await store1.set(refId, "persisted content", 3600);
+      // Read with a fresh store instance (empty memory)
+      const store2 = new DiskBackedStore({ dir: testDir, maxEntries: 100 });
+      const result = await store2.get(refId);
+      expect(result).toBe("persisted content");
+    } finally {
+      await rm(testDir, { recursive: true, force: true });
+    }
+  });
+
+  it("logs warning when disk write fails", async () => {
+    testDir = await createTestDir();
+    try {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      // Create a read-only refs dir to cause write failure
+      const refsDir = join(testDir, "refs");
+      await mkdir(refsDir, { recursive: true });
+      await chmod(refsDir, 0o444);
+
+      const store = new DiskBackedStore({ dir: testDir, maxEntries: 100 });
+      const refId = md5Hex("write fail test");
+      // set() should not throw, but log a warning
+      await store.set(refId, "should fail on disk", 3600);
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining(`[sccs] disk write failed for refId ${refId}`),
+        expect.anything(),
+      );
+      // Data should still be in memory
+      expect(await store.get(refId)).toBe("should fail on disk");
+      warnSpy.mockRestore();
+    } finally {
+      // Restore write permission before cleanup
+      const refsDir = join(testDir, "refs");
+      await chmod(refsDir, 0o755).catch(() => {});
       await rm(testDir, { recursive: true, force: true });
     }
   });

@@ -75,13 +75,13 @@ export class DiskBackedStore implements RefStore {
     await this.memory.set(refId, content, ttlSeconds);
     const expiresAt = Date.now() + Math.max(1, ttlSeconds) * 1000;
     const path = this.pathFor(refId);
-    void (async () => {
-      try {
-        await mkdir(join(this.dir, "refs"), { recursive: true });
-        await writeFile(path, JSON.stringify({ content, expiresAt }), "utf8");
-      } catch {
-        // best-effort
-      }
-    })();
+    try {
+      await mkdir(join(this.dir, "refs"), { recursive: true });
+      await writeFile(path, JSON.stringify({ content, expiresAt }), "utf8");
+    } catch (err) {
+      // Disk persistence is best-effort, but log the failure for observability.
+      // Data remains available in memory until evicted or process exits.
+      console.warn(`[sccs] disk write failed for refId ${refId}:`, err);
+    }
   }
 }
