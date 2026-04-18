@@ -60,7 +60,36 @@ export function extractTextContent(content: unknown): string {
   return "";
 }
 
+/**
+ * Replace text content in a message while preserving non-text content blocks (e.g. images).
+ * - If content is a string, replace it with [{ type: "text", text }].
+ * - If content is an array of ContentBlocks, replace the first text block and keep others.
+ *   If no text block exists, prepend one.
+ * - If content is an object or other, replace it with [{ type: "text", text }].
+ */
 export function setTextContent(message: MessageLike, text: string): MessageLike {
+  const content = message.content;
+  // String content — simple replacement
+  if (typeof content === "string") {
+    return { ...message, content: [{ type: "text", text }] };
+  }
+  // Array content — preserve non-text blocks, replace/add text block
+  if (Array.isArray(content)) {
+    let replaced = false;
+    const updated = content.map((block: ContentBlock) => {
+      if (!replaced && block && typeof block === "object" && block.type === "text") {
+        replaced = true;
+        return { ...block, text };
+      }
+      return block;
+    });
+    if (!replaced) {
+      // No existing text block found — prepend one
+      updated.unshift({ type: "text", text });
+    }
+    return { ...message, content: updated };
+  }
+  // Fallback (object or other)
   return { ...message, content: [{ type: "text", text }] };
 }
 
