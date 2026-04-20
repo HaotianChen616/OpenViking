@@ -4,18 +4,21 @@ import {
   isStandardToolResultContent,
 } from "../../sccs/utils.js";
 
-describe("SCCS Compressor - isStandardToolResultContent", () => {
-  it("accepts standard text content (string)", () => {
-    const content = "Plain text content";
-    expect(isStandardToolResultContent(content)).toBe(true);
-  });
+import { describe, expect, it, vi } from "vitest";
+import { compressToolMessages } from "../../sccs/compressor.js";
+import {
+  isStandardToolResultContent,
+  extractTextContent,
+  setTextContent,
+} from "../../sccs/utils.js";
 
-  it("accepts standard text content (array with single text block)", () => {
+describe("SCCS Compressor - isStandardToolResultContent", () => {
+  it("accepts array with single text block", () => {
     const content = [{ type: "text", text: "Tool output" }];
     expect(isStandardToolResultContent(content)).toBe(true);
   });
 
-  it("accepts standard text content (array with multiple text blocks)", () => {
+  it("accepts array with multiple text blocks", () => {
     const content = [
       { type: "text", text: "First part" },
       { type: "text", text: "Second part" }
@@ -40,6 +43,11 @@ describe("SCCS Compressor - isStandardToolResultContent", () => {
   it("rejects non-array non-string content", () => {
     expect(isStandardToolResultContent(123)).toBe(false);
     expect(isStandardToolResultContent(true)).toBe(false);
+  });
+
+  it("rejects string content", () => {
+    const content = "Plain text content";
+    expect(isStandardToolResultContent(content)).toBe(false);
   });
 
   it("rejects array with image_url blocks", () => {
@@ -87,28 +95,47 @@ describe("SCCS Compressor - isStandardToolResultContent", () => {
   });
 });
 
-describe("SCCS Compressor - isStandardToolResultContent edge cases", () => {
-  it("handles standard tool result format correctly", () => {
+describe("SCCS Compressor - setTextContent and extractTextContent", () => {
+  it("setTextContent replaces string content with text block array", () => {
+    const msg = { role: "tool", content: "original text" };
+    const result = setTextContent(msg, "compressed");
+    expect(result.content).toEqual([{ type: "text", text: "compressed" }]);
+  });
+
+  it("setTextContent replaces first text block in array content", () => {
+    const msg = {
+      role: "toolResult",
+      content: [
+        { type: "text", text: "original text" },
+        { type: "image", source: { data: "base64..." } },
+      ],
+    };
+    const result = setTextContent(msg, "compressed");
+    expect(result.content).toEqual([
+      { type: "text", text: "compressed" },
+      { type: "image", source: { data: "base64..." } },
+    ]);
+  });
+
+  it("extractTextContent extracts text from standard format", () => {
     const content = [{ type: "text", text: "Tool output" }];
-    expect(isStandardToolResultContent(content)).toBe(true);
+    const extracted = extractTextContent(content);
+    expect(extracted).toBe("Tool output");
   });
 
-  it("rejects mixed content with image_url blocks", () => {
+  it("extractTextContent handles string format", () => {
+    const content = "Plain text content";
+    const extracted = extractTextContent(content);
+    expect(extracted).toBe("Plain text content");
+  });
+
+  it("extractTextContent handles multiple text blocks", () => {
     const content = [
-      { type: "text", text: "Analysis" },
-      { type: "image_url", image_url: { url: "data:image/png;base64,..." } }
+      { type: "text", text: "First part" },
+      { type: "text", text: "Second part" }
     ];
-    expect(isStandardToolResultContent(content)).toBe(false);
-  });
-
-  it("rejects content with missing type field", () => {
-    const content = [{ text: "Missing type field" }];
-    expect(isStandardToolResultContent(content)).toBe(false);
-  });
-
-  it("rejects content with undefined type", () => {
-    const content = [{ type: undefined, text: "Undefined type" }];
-    expect(isStandardToolResultContent(content)).toBe(false);
+    const extracted = extractTextContent(content);
+    expect(extracted).toBe("First part\nSecond part");
   });
 });
 
