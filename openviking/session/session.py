@@ -655,26 +655,36 @@ class Session:
             if len(part.tool_output or "") > cfg.threshold_chars:
                 selected.add(idx)
 
-        def projected_inline_chars(selected_indices: set[int]) -> int:
-            preview_chars = self._effective_tool_preview_chars(cfg, len(selected_indices))
+        output_lengths = [len(part.tool_output or "") for part in tool_parts]
+        remaining = sorted(
+            [idx for idx in normal_indices if idx not in selected],
+            key=lambda idx: output_lengths[idx],
+            reverse=True,
+        )
+        remaining_rank = {idx: rank for rank, idx in enumerate(remaining)}
+
+        def projected_inline_chars(additional_selected_count: int) -> int:
+            selected_count = len(selected) + additional_selected_count
+            preview_chars = self._effective_tool_preview_chars(cfg, selected_count)
             total = 0
-            for idx, part in enumerate(tool_parts):
-                output_len = len(part.tool_output or "")
-                if idx in selected_indices:
+            for idx, output_len in enumerate(output_lengths):
+                rank = remaining_rank.get(idx)
+                if idx in selected or (rank is not None and rank < additional_selected_count):
                     total += min(output_len, preview_chars)
                 else:
                     total += output_len
             return total
 
-        remaining = sorted(
-            [idx for idx in normal_indices if idx not in selected],
-            key=lambda idx: len(tool_parts[idx].tool_output or ""),
-            reverse=True,
-        )
-        while (
-            projected_inline_chars(selected) > cfg.assistant_turn_inline_budget_chars and remaining
-        ):
-            selected.add(remaining.pop(0))
+        if projected_inline_chars(0) > cfg.assistant_turn_inline_budget_chars and remaining:
+            low = 1
+            high = len(remaining)
+            while low < high:
+                mid = (low + high) // 2
+                if projected_inline_chars(mid) > cfg.assistant_turn_inline_budget_chars:
+                    low = mid + 1
+                else:
+                    high = mid
+            selected.update(remaining[:low])
 
         preview_chars = self._effective_tool_preview_chars(cfg, len(selected))
         for idx in sorted(selected):

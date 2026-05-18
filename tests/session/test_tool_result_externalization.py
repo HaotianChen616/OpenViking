@@ -82,6 +82,56 @@ async def test_assistant_turn_budget_externalizes_largest_medium_output(session:
     assert all(p.tool_output_group_original_chars == 30 for p in parts)
 
 
+async def test_assistant_turn_budget_selects_minimal_largest_prefix(session: Session):
+    session._tool_output_externalization_config = _small_config(
+        threshold_chars=100,
+        preview_chars=20,
+        assistant_turn_inline_budget_chars=70,
+        assistant_turn_preview_budget_chars=40,
+        min_preview_chars=5,
+    )
+
+    msg = session.add_message(
+        "user",
+        [
+            ToolPart(
+                tool_id="call_a",
+                tool_name="tool_a",
+                tool_output="a" * 60,
+                tool_status="completed",
+            ),
+            ToolPart(
+                tool_id="call_b",
+                tool_name="tool_b",
+                tool_output="b" * 50,
+                tool_status="completed",
+            ),
+            ToolPart(
+                tool_id="call_c",
+                tool_name="tool_c",
+                tool_output="c" * 40,
+                tool_status="completed",
+            ),
+            ToolPart(
+                tool_id="call_d",
+                tool_name="tool_d",
+                tool_output="d" * 30,
+                tool_status="completed",
+            ),
+        ],
+    )
+
+    parts = msg.get_tool_parts()
+    externalized_ids = [p.tool_id for p in parts if p.tool_output_truncated]
+
+    assert externalized_ids == ["call_a", "call_b", "call_c"]
+    assert parts[3].tool_output_truncated is False
+    assert all(
+        p.tool_output_externalized_reason == "turn_budget"
+        for p in parts[:3]
+    )
+
+
 async def test_read_back_tool_result_reuses_source_ref(session: Session):
     session._tool_output_externalization_config = _small_config()
     raw = "source-" * 20
